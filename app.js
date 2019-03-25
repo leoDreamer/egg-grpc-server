@@ -2,6 +2,7 @@
 const fs = require('fs');
 
 module.exports = app => {
+  if (app.config.startAfterInit) return;
   app.beforeStart(() => {
     fs.writeFileSync('pid', process.pid);
   });

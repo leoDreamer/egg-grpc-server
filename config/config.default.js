@@ -11,6 +11,7 @@ exports.grpcServer = {
   timeOut: 5000,
   protoDir: 'app/proto',
   grpcDir: 'app/grpc',
+  startAfterInit: false,
   loadOption: {
     keepCase: true,
     longs: String,
