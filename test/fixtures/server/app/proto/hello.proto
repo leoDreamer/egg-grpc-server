@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package egg.node;
+
+service Hello {
+    rpc sayHello (HelloReq) returns (HelloResp) {};
+    rpc buf (stream BufRequest) returns (stream BufResp) {};
+}
+
+message HelloReq {
+    string name = 1;
+    int32 group = 2;
+}
+
+message HelloResp {
+    int32 code = 1;
+    string message = 2;
+}
+
+message BufRequest {
+    string name = 1;
+}
+
+message BufResp {
+    string message = 1;
+    int32 code = 2;
+}
