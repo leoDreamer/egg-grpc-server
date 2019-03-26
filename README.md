@@ -26,9 +26,9 @@ eggjs 的 grpc 插件，目前还不支持流式请求和响应，后续支持,�
 
 ## Install
 
-<!-- $ npm i egg-grpc-server --save -->
+<!-- $ npm i egg-grpc-service --save -->
 ```bash
-npm install egg-plugin-grpc-server --save
+npm install egg-grpc-service --save
 ```
 
 ## Usage
@@ -37,7 +37,7 @@ npm install egg-plugin-grpc-server --save
 // {app_root}/config/plugin.js
 exports.grpcServer = {
   enable: true,
-  package: 'egg-plugin-grpc-server',
+  package: 'egg-grpc-service',
 };
 ```
 
@@ -49,8 +49,9 @@ exports.grpcServer = {
   port: 50051,             // grpc监听端口
   host: '127.0.0.1',       // 监听地址
   timeOut: 5000,           // 超时时间
-  protoDir: 'app/proto',  // proto文件所在文件夹
-  grpcDir: 'app/grpc'     // 接口实现所在文件夹
+  protoDir: 'app/proto',   // proto文件所在文件夹
+  grpcDir: 'app/grpc',     // 接口实现所在文件夹
+  startAfterInit: false,   // 默认启动 grpc server
   errorHandle(error) {     // 全局统一错误处理
     // TODO
     // this 为ctx，接受error参数
@@ -62,10 +63,14 @@ see [config/config.default.js](config/config.default.js) for more detail.
 
 ## Example
 
+### 实现
++ 插件在app上挂载了GrpcServer的class，在项目启动时实例化并调用start方法
++ 在cluster模式下，会通过项目根目录下"pid"临时文件确定是哪一个worker进程启动grpc server
+
 ### 启动
 
-+ 插件在app上挂载了GrpcServer的class，需要在项目启动时实例化并调用start方法
-+ 启动方式一：直接在app.js实例化并启动**不推荐(在多进程模式下会报错)**
++ grpc server 可通过配置项 `startAfterInit` 控制是否自启动，默认`false`不自启动
++ 启动方式一：直接在app.js实例化并启动【**不推荐**】
 ```javascript
 // ${app_root}/app.js
 module.exports = app => {
@@ -74,121 +79,7 @@ module.exports = app => {
   Reflect.defineProperty(app, 'grpcServer', { value: grpcServer });
 };
 ```
-+ 启动方式二：使用cluster-client管理启动
-  + agent上创建leader，管理work中server实例
-```javascript
-// ${app_root}/app.js
-module.exports = app => {
-  const registryClient = app.cluster(app.RealClient, { isBroadcast: false }).create({})
-
-  app.beforeStart(async () => {
-    // worker 订阅启动grpc 服务消息
-    registryClient.subscribe({
-      dataId: 'grpc.server.leader.attach'
-    }, val => {
-      app.logger.info(`worker subscribe [grpc.server.leader.attach]: ${val}`)
-      if (val === process.pid) {
-        const grpcServer = new app.GrpcServer(app)
-        grpcServer.start()
-        Reflect.defineProperty(app, 'grpcServer', { value: grpcServer })
-        // 向leader发送start消息
-        registryClient.publish({
-          dataId: 'grpc.server.worker.start',
-          publishData: process.pid
-        })
-      }
-    })
-
-    // 向leader发送ready消息
-    registryClient.publish({
-      dataId: 'grpc.server.worker.ready',
-      publishData: process.pid
-    })
-  })
-
-  // 退出时关闭 grpc server 并 像 leader 发送 close 信号
-  app.beforeClose(async () => {
-    await app.grpcServer.close()
-    // 向leader发送ready消息
-    registryClient.publish({
-      dataId: 'grpc.server.worker.close',
-      publishData: process.pid
-    })
-  })
-
-  process.on('disconnect', async () => {
-    await app.grpcServer.close()
-    registryClient.publish({
-      dataId: 'grpc.server.worker.close',
-      publishData: process.pid
-    })
-  })
-
-  process.on('uncaughtException', async err => {
-    await app.grpcServer.close()
-    registryClient.publish({
-      dataId: 'grpc.server.worker.close',
-      publishData: process.pid
-    })
-    app.logger.error(err)
-  })
-}
-```
-```javascript
-// ${app_root}/agent.js
-module.exports = agent => {
-  const registryClient = agent.cluster(agent.RealClient, { isBroadcast: false }).create({})
-
-  agent.beforeStart(async () => {
-    await registryClient.ready()
-    const works = new Map()
-
-    // 订阅 worker ready消息，并记录
-    registryClient.subscribe({
-      dataId: 'grpc.server.worker.ready'
-    }, val => {
-      agent.logger.info(`leader subscribe [grpc.server.worker.ready]: ${val}`)
-      works.set(val, false)
-      let isStarted = false
-      works.forEach((value, key) => {
-        if (value) isStarted = true
-      })
-      if (!isStarted) {
-        registryClient.publish({
-          dataId: 'grpc.server.leader.attach',
-          publishData: [...works.keys()][0]
-        })
-      }
-    })
-
-    // 订阅 worker grpc server启动消息
-    registryClient.subscribe({
-      dataId: 'grpc.server.worker.start'
-    }, val => {
-      agent.logger.info(`leader subscribe [grpc.server.worker.start]: ${val}`)
-      works.set(val, true)
-    })
-
-    // 订阅worker关闭消息
-    registryClient.subscribe({
-      dataId: 'grpc.server.worker.close'
-    }, val => {
-      agent.logger.info(`leader subscribe [grpc.server.worker.close]: ${val}`)
-      agent.logger.info(`leader current works: ${works}`)
-      works.delete(val)
-      registryClient.publish({
-        dataId: 'grpc.server.leader.attach',
-        publishData: [...works.keys()][0]
-      })
-    })
-  })
-
-  process.on('uncaughtException', err => {
-    agent.logger.error(err)
-  })
-}
-
-```
++ 启动方式二：配置项`startAfterInit`设置为true自启动【**推荐**】
 
 + proto/xxx.proto service中的的接口名 grpc/xxx.js 中的接口名 二者应当同名(grpc/xxx.js文件名可不大写)
 
