@@ -1,6 +1,5 @@
 'use strict';
 const fs = require('fs');
-const path = require('path');
 
 module.exports = app => {
 
@@ -13,11 +12,11 @@ module.exports = app => {
   }
 
   app.beforeStart(() => {
-    fs.writeFileSync(path.join(__dirname, 'pid.cache'), process.pid);
+    fs.writeFileSync('pid', process.pid);
   });
   app.ready(() => {
-    if (!app.config.startAfterInit) return;
-    const pid = fs.readFileSync(path.join(__dirname, 'pid.cache'), { encoding: 'utf8' });
+    if (app.config.startAfterInit) return;
+    const pid = fs.readFileSync('pid', { encoding: 'utf8' });
     if (Number(pid) === process.pid) {
       const grpcServer = new app.GrpcServer(app);
       grpcServer.start();
