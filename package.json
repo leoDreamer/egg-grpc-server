@@ -1,6 +1,6 @@
 {
   "name": "egg-grpc-service",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "a egg grpc server plugin",
   "eggPlugin": {
     "name": "grpcServer"
